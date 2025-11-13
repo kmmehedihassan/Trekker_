@@ -1,443 +1,304 @@
-from turtle import title
-from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework.parsers import JSONParser
-from django.http.response import JsonResponse
-from rest_framework.parsers import MultiPartParser, FormParser
-from EmployeeApp.models import Departments, Employees,UploadFile,Students,Modules,MyReservation,MyHotelInfo,MyTourInfo,MyTour
-from EmployeeApp.serializers import DepartmentSerializer,EmployeeSerializer,BookSerializer,StudentsSerializer,ModulesSerializer,MyReservationSerializer,MyHotelInfoSerializer,MyTourInfoSerializer,MyTourSerializer
-from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework import viewsets, filters, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import status,viewsets
-from django.utils.dateparse import parse_date
-from django.core.files.storage import default_storage
-from django.forms.models import model_to_dict
-import json
-# Create your views here.
-
-@csrf_exempt
-def departmentApi(request,id=0):
-    if request.method=='GET':
-        departments=Departments.objects.all()
-        departments_serializer=DepartmentSerializer(departments,many=True)
-        return JsonResponse(departments_serializer.data,safe=False)
-    elif   request.method=='POST':
-        department_data=JSONParser().parse(request)
-        department_serializer=DepartmentSerializer(data=department_data)
-        if department_serializer.is_valid():
-            department_serializer.save()
-            return JsonResponse('Added Successfull',safe=False)
-        return JsonResponse('failed to add',safe=False)
-    elif request.method=='PUT':
-        department_data=JSONParser().parse(request)
-        department=Departments.objects.get(DepartmentId=department_data['DepartmentId'])
-        department_serializer=DepartmentSerializer(department,data=department_data)
-        if department_serializer.is_valid():
-            department_serializer.save()
-            return JsonResponse('Update Successfull',safe=False)
-        return JsonResponse('failed to Update',safe=False)
-    elif request.method=='DELETE':
-        department=Departments.objects.get(DepartmentId=id)
-        department.delete()
-        return JsonResponse('Deleted Successfull',safe=False)
-
-@csrf_exempt
-def employeeApi(request,id=0):
-    if request.method=='GET':
-        employees = Employees.objects.all()
-        employees_serializer = EmployeeSerializer(employees, many=True)
-        return JsonResponse(employees_serializer.data, safe=False)
-
-    elif request.method=='POST':
-        employee_data=JSONParser().parse(request)
-        employee_serializer = EmployeeSerializer(data=employee_data)
-        if employee_serializer.is_valid():
-            employee_serializer.save()
-            return JsonResponse("Added Successfully!!" , safe=False)
-        return JsonResponse("Failed to Add.",safe=False)
-    
-    elif request.method=='PUT':
-        employee_data = JSONParser().parse(request)
-        employee=Employees.objects.get(EmployeeId=employee_data['EmployeeId'])
-        employee_serializer=EmployeeSerializer(employee,data=employee_data)
-        if employee_serializer.is_valid():
-            employee_serializer.save()
-            return JsonResponse("Updated Successfully!!", safe=False)
-        return JsonResponse("Failed to Update.", safe=False)
-
-    elif request.method=='DELETE':
-        employee=Employees.objects.get(EmployeeId=id)
-        employee.delete()
-        return JsonResponse("Deleted Succeffully!!", safe=False)
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, AllowAny
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.db.models import Q
+from datetime import date
+from .models import Hotel, Room, HotelReservation, Tour, TourBooking
+from .serializers import (
+    HotelSerializer, HotelListSerializer, RoomSerializer,
+    HotelReservationSerializer, TourSerializer, TourListSerializer,
+    TourBookingSerializer
+)
+from rest_framework import serializers as drf_serializers
 
 
+class HotelViewSet(viewsets.ModelViewSet):
+    """Hotel management viewset"""
+    queryset = Hotel.objects.filter(is_active=True)
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'city', 'country', 'description']
+    ordering_fields = ['name', 'star_rating', 'created_at']
+    ordering = ['-created_at']
 
-@csrf_exempt
-def SaveFile(request):
-    file=request.FILES['myFile']
-    file_name = default_storage.save(file.name,file)
+    def get_serializer_class(self):
+        """Use different serializers for list and detail views"""
+        if self.action == 'list':
+            return HotelListSerializer
+        return HotelSerializer
 
-    return JsonResponse(file_name,safe=False)
+    def get_queryset(self):
+        """Filter hotels based on query parameters"""
+        queryset = super().get_queryset()
 
+        # Filter by city
+        city = self.request.query_params.get('city', None)
+        if city:
+            queryset = queryset.filter(city__icontains=city)
 
-class FileView(APIView):
-  parser_classes = (MultiPartParser, FormParser)
-  def get(self,request):
-    Title=request.query_params.get('title',None)
-    print(Title)
-    if(Title is not None):
-        imgobj = UploadFile.objects.filter(title__in=(Title,"test") )
-        
-    else:
-        imgobj = UploadFile.objects.all()
-    
-    serializer = BookSerializer(imgobj, many=True, context= 
-        {'request': request})
+        # Filter by country
+        country = self.request.query_params.get('country', None)
+        if country:
+            queryset = queryset.filter(country__icontains=country)
 
-    return JsonResponse(serializer.data ,safe=False)
+        # Filter by star rating
+        star_rating = self.request.query_params.get('star_rating', None)
+        if star_rating:
+            queryset = queryset.filter(star_rating=star_rating)
 
-    # return Response({
-    #         'status' : True,
-    #         'message' : 'Image List',
-    #         'images' : serializer.data})
+        return queryset
 
-  def post(self, request, *args, **kwargs):
-    file_serializer = BookSerializer(data=request.data)
-    if file_serializer.is_valid():
-      file_serializer.save()
-      return Response(file_serializer.data, status=status.HTTP_201_CREATED)
-    else:
-      return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class StudentsViewSet(APIView):
-    
-    
-    serializer_class = StudentsSerializer
-    parser_classes = (MultiPartParser, FormParser)
-
-    def get(self,request,Id=0):
-        print(Id)
-        if(Id is not None and Id is not 0):
-            student=Students.objects.filter(id=Id)
-        else:    
-            student = Students.objects.all()
-            
-        # student = Students.objects.all()
-
-        student_serializer=StudentsSerializer(student,many=True)
-                
-        return JsonResponse(student_serializer.data,safe=False)
-
-    def post(self, request):
-        student_data =JSONParser().parse(request)
-
-        new_student = Students.objects.create(
-            name=student_data["name"], age=student_data['age'], grade=student_data["grade"])
-
-        new_student.save()
-
-        for module in student_data["modules"]:
-            print(module)
-            module_obj = Modules.objects.get(module_name=module["module_name"])
-            new_student.modules.add(module_obj)
-
-        serializer = StudentsSerializer(new_student)
-
+    @action(detail=True, methods=['get'])
+    def rooms(self, request, pk=None):
+        """Get all rooms for a specific hotel"""
+        hotel = self.get_object()
+        rooms = hotel.rooms.filter(available_rooms__gt=0)
+        serializer = RoomSerializer(rooms, many=True)
         return Response(serializer.data)
-        # student_serializer = StudentsSerializer(data=student_data)
-        # if student_serializer.is_valid():
-        #     student_serializer.save()
-        #     return JsonResponse("Added Successfully!!" , safe=False)
-        # return JsonResponse("Failed to Add.",safe=False)
-    
 
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """Search hotels by various criteria"""
+        query = request.query_params.get('q', '')
+        queryset = self.get_queryset()
 
-class ModulesViewSet(APIView):
-    serializer_class = ModulesSerializer
-    parser_classes = (MultiPartParser, FormParser)
-
-    def get(self,request):
-        module = Modules.objects.all()
-        module_serializer=ModulesSerializer(module,many=True)
-        return Response(module_serializer.data)
-
-@csrf_exempt
-def confirm(request, pk = None):
-    
-    if request.method == 'GET':
-        print(type(pk))
-        if pk == str(5):
-            Booking_data=JSONParser().parse(request)
-            roomquantity= Booking_data['roomquantity']
-            check_in=Booking_data['check_in']
-            check_out=Booking_data['check_out']
-            new_obj=MyReservation.objects.all()
-            new_dict=MyReservationSerializer(new_obj,many=True)
-            print(type(new_dict))
-
-        if pk == str(6):
-                
-            employees = MyTourInfo.objects.all()
-            employees_serializer = MyTourInfoSerializer(employees, many=True)
-            return JsonResponse(employees_serializer.data, safe=False)
-        if pk == str(7):
-            booking = MyTour.objects.all()
-            Booking_serializer = MyTourSerializer(booking, many=True)
-            return JsonResponse(Booking_serializer.data, safe=False)
-        if pk == str(8):
-            Booking_data=JSONParser().parse(request)
-            guest=Booking_data['guest']
-            booking = MyReservation.objects.filter(guest=Booking_data['guest'])
-            Booking_serializer = MyReservationSerializer(booking, many=True)
-            return JsonResponse(Booking_serializer.data, safe=False)
-            # pass
-        if pk == str(9):
-            Booking_data=JSONParser().parse(request)
-            guest=Booking_data['guest']
-            booking = MyTour.objects.all()
-            Booking_serializer = MyTourSerializer(booking, many=True)
-            return JsonResponse(Booking_serializer.data, safe=False)
-            pass
-        if pk == str(10):
-            # return
-            # print(json.loads(request.body))
-            # print(type(request.body ))
-            # Booking_data=request.GET
-            Title=request.GET.get('price')
-            print('The tiltle of the guest',Title)
-            print (request.GET)
-            print(type(request))
-            # Booking_data=JSONParser().parse(request.GET)
-            # ser=MyReservationSerializer(data=Booking_data)
-
-        #   print(temp_obj['Bookdata'])
-        #   Booking_data=temp_obj['Bookdata']
-            # print(ser)
-            # print(Booking_data)
-          
-        #   Booking_data=JSONParser.__dir__(request.body)
-        #   print(Booking_data[0])
-            hotel_id=request.GET.get('hotel_id')
-            roomquantity= request.GET.get('roomquantity')
-            room=request.GET.get('room')
-            guest=request.GET.get('guest')
-            check_in=request.GET.get('check_in')
-            check_out=request.GET.get('check_out')
-            price=request.GET.get('price')
-            cardata=request.GET.get('cardata')
-
-            total_quantity_on_a_date=0
-
-            new_obj= MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__gte=check_in, check_out__lte=check_out)
-
-            for obj in new_obj:
-                  total_quantity_on_a_date+=obj.roomquantity
-
-
-            print(total_quantity_on_a_date)
-            total_quantity_on_a_date+=int(roomquantity)
-
-            gret_obj=MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__lt=check_in) | MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_out__gt=check_out) | MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__gte=check_in, check_out__lte=check_out)
-            for obj in gret_obj:
-                print(f'total quantity {obj.check_in} {obj.check_out} {obj.roomquantity} ')
-                if (obj.check_in<=parse_date(check_in) and obj.check_out>=parse_date(check_in)) or (obj.check_in<=parse_date(check_out) and obj.check_out>=parse_date(check_out)): 
-                   print('inside fthe fun')
-                   total_quantity_on_a_date+=obj.roomquantity   
-            Hotel_Obj=MyHotelInfo.objects.get(room_id=request.GET.get('room'),hotel_id=request.GET.get('hotel_id'))
-            
-            print('Between the room total quantity :',total_quantity_on_a_date)
-            print('Hotel room highest quantity :',Hotel_Obj.roomquantity)
-            # print(Hotel_Obj.remaining)
-            if(total_quantity_on_a_date<=Hotel_Obj.roomquantity):
-                  return JsonResponse({"msg":"Success"},safe=status.HTTP_202_ACCEPTED)
-            else:
-               return JsonResponse({"msg":"Room quantity no available"},safe=status.HTTP_404_NOT_FOUND)
-
-        else:  
-            booking = MyReservation.objects.all()
-            Booking_serializer = MyReservationSerializer(booking, many=True)
-            return JsonResponse(Booking_serializer.data, safe=False)
-
-    elif request.method=='DELETE':
-        if pk==str(9):
-            Booking_data=JSONParser().parse(request)
-            booking=MyTour.objects.get(
-                tour_id=Booking_data['tour_id'],
-                ticket= Booking_data['ticket'],
-                guest=Booking_data['guest'],
-                price=Booking_data['price'],
-                cardata=Booking_data['cardata']                
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query) |
+                Q(city__icontains=query) |
+                Q(country__icontains=query) |
+                Q(description__icontains=query)
             )
-            booking.delete()
-            return JsonResponse("Deleted Succeffully!!", safe=False)
 
-            # pass
-        if pk==str(8):
-            Booking_data=JSONParser().parse(request)
-            booking=MyReservation.objects.get(
-                hotel_id=Booking_data['hotel_id'],
-                roomquantity= Booking_data['roomquantity'],
-                room=Booking_data['room'],
-                guest=Booking_data['guest'],
-                check_in=Booking_data['check_in'],
-                check_out=Booking_data['check_out'],
-                price=Booking_data['price'],
-                cardata=Booking_data['cardata']
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
+
+class RoomViewSet(viewsets.ModelViewSet):
+    """Room management viewset"""
+    queryset = Room.objects.all()
+    serializer_class = RoomSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['hotel__name', 'room_type']
+    ordering_fields = ['price_per_night', 'capacity']
+    ordering = ['price_per_night']
+
+    def get_queryset(self):
+        """Filter rooms based on query parameters"""
+        queryset = super().get_queryset()
+
+        # Filter by hotel
+        hotel_id = self.request.query_params.get('hotel_id', None)
+        if hotel_id:
+            queryset = queryset.filter(hotel_id=hotel_id)
+
+        # Filter by availability
+        available = self.request.query_params.get('available', None)
+        if available == 'true':
+            queryset = queryset.filter(available_rooms__gt=0)
+
+        # Filter by room type
+        room_type = self.request.query_params.get('room_type', None)
+        if room_type:
+            queryset = queryset.filter(room_type=room_type)
+
+        return queryset
+
+
+class HotelReservationViewSet(viewsets.ModelViewSet):
+    """Hotel reservation management viewset"""
+    queryset = HotelReservation.objects.all()
+    serializer_class = HotelReservationSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['check_in', 'created_at']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        """Users can only see their own reservations, staff can see all"""
+        if self.request.user.is_staff:
+            return HotelReservation.objects.all()
+        return HotelReservation.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        """Automatically set the user and update room availability"""
+        room = serializer.validated_data['room']
+        num_rooms = serializer.validated_data['num_rooms']
+
+        # Check availability
+        if room.available_rooms < num_rooms:
+            raise drf_serializers.ValidationError(f"Only {room.available_rooms} rooms available")
+
+        # Update room availability
+        room.available_rooms -= num_rooms
+        room.save()
+
+        # Save reservation
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Cancel a reservation"""
+        reservation = self.get_object()
+
+        if reservation.status == 'CANCELLED':
+            return Response({
+                'error': 'Reservation is already cancelled'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if reservation.status == 'COMPLETED':
+            return Response({
+                'error': 'Cannot cancel completed reservation'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update status
+        reservation.status = 'CANCELLED'
+        reservation.save()
+
+        # Restore room availability
+        room = reservation.room
+        room.available_rooms += reservation.num_rooms
+        room.save()
+
+        return Response({
+            'message': 'Reservation cancelled successfully'
+        })
+
+    @action(detail=False, methods=['get'])
+    def my_reservations(self, request):
+        """Get current user's reservations"""
+        reservations = self.get_queryset().filter(user=request.user)
+        serializer = self.get_serializer(reservations, many=True)
+        return Response(serializer.data)
+
+
+class TourViewSet(viewsets.ModelViewSet):
+    """Tour management viewset"""
+    queryset = Tour.objects.filter(is_active=True)
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'destination', 'description']
+    ordering_fields = ['start_date', 'price_per_person', 'created_at']
+    ordering = ['start_date']
+
+    def get_serializer_class(self):
+        """Use different serializers for list and detail views"""
+        if self.action == 'list':
+            return TourListSerializer
+        return TourSerializer
+
+    def get_queryset(self):
+        """Filter tours based on query parameters"""
+        queryset = super().get_queryset()
+
+        # Filter by destination
+        destination = self.request.query_params.get('destination', None)
+        if destination:
+            queryset = queryset.filter(destination__icontains=destination)
+
+        # Filter by availability
+        available = self.request.query_params.get('available', None)
+        if available == 'true':
+            queryset = queryset.filter(available_spots__gt=0, start_date__gte=date.today())
+
+        # Filter by date range
+        start_date = self.request.query_params.get('start_date', None)
+        if start_date:
+            queryset = queryset.filter(start_date__gte=start_date)
+
+        end_date = self.request.query_params.get('end_date', None)
+        if end_date:
+            queryset = queryset.filter(end_date__lte=end_date)
+
+        return queryset
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """Search tours by various criteria"""
+        query = request.query_params.get('q', '')
+        queryset = self.get_queryset()
+
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query) |
+                Q(destination__icontains=query) |
+                Q(description__icontains=query)
             )
-            booking.delete()
-            return JsonResponse("Deleted Succeffully!!", safe=False)
 
-            # pass
-        
-        else:
-            booking=MyReservation.objects.all()
-            booking.delete()
-            return JsonResponse("Deleted Succeffully!!", safe=False)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
-    if request.method == 'POST':
-        #     tour_id=models.IntegerField()
-        # guest= models.CharField(max_length=50)
-        # ticket=models.IntegerField()
-        # price=models.IntegerField(default=0)
-        # cardata=models.IntegerField(default=0)
-        
-        if pk ==str(6):
-            Booking_data=JSONParser().parse(request)
-            tour_id=Booking_data['tour_id']
-            ticket= Booking_data['ticket']
-            guest=Booking_data['guest']
-            price=Booking_data['price']
-            cardata=Booking_data['cardata']
-            total_ticket=0
-            total_ticket+=int(ticket)
-            reservation = MyTour(
-             ticket=ticket,
-             guest = guest,
-             tour_id=tour_id,
-            #  roomquantity=roomquantity,
-             price=price,
-             cardata=cardata
+class TourBookingViewSet(viewsets.ModelViewSet):
+    """Tour booking management viewset"""
+    queryset = TourBooking.objects.all()
+    serializer_class = TourBookingSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
 
-             )
-            tour_obj=MyTourInfo.objects.get(tour_id=Booking_data['tour_id'])
-            new_obj=MyTour.objects.filter(tour_id=Booking_data['tour_id'])
-            for obj in new_obj:
-                total_ticket+=obj.ticket
+    def get_queryset(self):
+        """Users can only see their own bookings, staff can see all"""
+        if self.request.user.is_staff:
+            return TourBooking.objects.all()
+        return TourBooking.objects.filter(user=self.request.user)
 
-            if (total_ticket<=tour_obj.tourquantity):
-                reservation.save()
-                return JsonResponse({"msg":"Success"})
-            else:
-                return JsonResponse('Ticket not available',safe=False)
-            
-            
+    def perform_create(self, serializer):
+        """Automatically set the user and update tour availability"""
+        tour = serializer.validated_data['tour']
+        num_participants = serializer.validated_data['num_participants']
 
-            
-        elif pk:
-            invalid_dates= False
-            Booking_data=JSONParser().parse(request)
-            print(Booking_data) 
-            hotel_id=Booking_data['hotel_id']
-            roomquantity= Booking_data['roomquantity']
-            room=Booking_data['room']
-            guest=Booking_data['guest']
-            check_in=Booking_data['check_in']
-            check_out=Booking_data['check_out']
-            price=Booking_data['price']
-            cardata=Booking_data['cardata']
+        # Check availability
+        if tour.available_spots < num_participants:
+            raise drf_serializers.ValidationError(f"Only {tour.available_spots} spots available")
 
+        # Update tour availability
+        tour.available_spots -= num_participants
+        tour.save()
 
-            total_quantity_on_a_date=0
-            new_obj= MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__gte=check_in, check_out__lte=check_out)
-            print(new_obj)
-            for obj in new_obj:
-                total_quantity_on_a_date+=obj.roomquantity
-            print(total_quantity_on_a_date)
-            total_quantity_on_a_date+=int(roomquantity)
-            print("On this day total quantity")
-            print(total_quantity_on_a_date)
-            gret_obj=MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__lt=check_in) | MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_out__gt=check_out) | MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__gt=check_in, check_out__lt=check_out)
-            for obj in gret_obj:
-                print(f'total quantity {obj.check_in} {obj.check_out}  ')
-                if (obj.check_in<=parse_date(check_in) and obj.check_out>=parse_date(check_in)) or (obj.check_in<=parse_date(check_out) and obj.check_out>=parse_date(check_out)): 
-                    print('isnside fthe fun')
-                    total_quantity_on_a_date+=obj.roomquantity
-            
-            print("Between this day total quantity")
-            print(total_quantity_on_a_date)
+        # Save booking
+        serializer.save(user=self.request.user)
 
-            case_2 = MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__lte=check_out, check_out__gte=check_out).exists()
-            case_1 = MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__lte=check_in, check_out__gte=check_in).exists()
-            case_3 = MyReservation.objects.filter(room=room,hotel_id=hotel_id, check_in__gte=check_in, check_out__lte=check_out).exists()
-            # print(case_1+case_2+case_3)
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Cancel a tour booking"""
+        booking = self.get_object()
 
-            reservation = MyReservation(
-             check_in = check_in, 
-             check_out = check_out,
-             room = room,
-             guest = guest,
-             hotel_id=hotel_id,
-             roomquantity=roomquantity,
-             price=price,
-             cardata=cardata
+        if booking.status == 'CANCELLED':
+            return Response({
+                'error': 'Booking is already cancelled'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-             )
-            
-            Hotel_Obj=MyHotelInfo.objects.get(room_id=Booking_data['room'],hotel_id=Booking_data['hotel_id'])
-            print(Hotel_Obj.roomquantity)
-            # print(Hotel_Obj.remaining)
-            if(total_quantity_on_a_date<=Hotel_Obj.roomquantity):
-                Hotel_Obj.remaining+=1
-                Hotel_Obj.save()
-                reservation.save()
-                return JsonResponse({"msg":"Success"})
-            else:
-                if case_1 or case_2 or case_3 :
-                    return JsonResponse( {"errors": "This room is not available on your selected dates"})
+        if booking.status == 'COMPLETED':
+            return Response({
+                'error': 'Cannot cancel completed booking'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-                return JsonResponse('Room quantity no available',safe=False)
+        # Update status
+        booking.status = 'CANCELLED'
+        booking.save()
 
-            
+        # Restore tour availability
+        tour = booking.tour
+        tour.available_spots += booking.num_participants
+        tour.save()
+
+        return Response({
+            'message': 'Booking cancelled successfully'
+        })
+
+    @action(detail=False, methods=['get'])
+    def my_bookings(self, request):
+        """Get current user's tour bookings"""
+        bookings = self.get_queryset().filter(user=request.user)
+        serializer = self.get_serializer(bookings, many=True)
+        return Response(serializer.data)
 
 
-
-@csrf_exempt
-def MyHotelApi(request,id=0):
-    if request.method=='GET':
-        Hotels=MyHotelInfo.objects.all()
-        Hotel_serializer=MyHotelInfoSerializer(Hotels,many=True)
-        return JsonResponse(Hotel_serializer.data,safe=False)
-    elif   request.method=='POST':
-        if id==str(6): 
-            print("inside")    
-            Hotel_data=JSONParser().parse(request)
-            Hotel_serializer=MyTourInfoSerializer(data=Hotel_data)
-            if Hotel_serializer.is_valid():
-                Hotel_serializer.save()
-                return JsonResponse('Added Successfull',safe=False)
-            return JsonResponse('failed to add',safe=False)
-        else:    
-            Hotel_data=JSONParser().parse(request)
-            Hotel_serializer=MyHotelInfoSerializer(data=Hotel_data)
-            if Hotel_serializer.is_valid():
-                Hotel_serializer.save()
-                return JsonResponse('Added Successfull',safe=False)
-            return JsonResponse('failed to add',safe=False)
-
-    elif request.method=='PATCH':
-        Hotel_data=JSONParser().parse(request)
-        Hotel_Obj=MyHotelInfo.objects.get(room_id=Hotel_data['room_id'],hotel_id=Hotel_data['hotel_id'])
-        print(Hotel_Obj.roomquantity)
-        print(Hotel_Obj.remaining)
-        if(Hotel_Obj.remaining<=30):
-            Hotel_Obj.roomquantity=3
-            Hotel_Obj.save()
-            # Hotel_serializer=MyHotelInfoSerializer(Hotel_Obj,data=Hotel_Obj)
-            # if profile_serializer.is_valid():
-            #     profile_serializer.save()
-            return JsonResponse('Update Sucess',safe=False)
-    return JsonResponse('Fail',safe=False) 
+# Legacy code removal - all old function-based views have been replaced with proper ViewSets
